@@ -223,7 +223,8 @@ class EmojiPage(Gtk.Box):
         self.on_pick = on_pick
         self.store = store
         self.query = ""
-        self.keywords = {}
+        self.keywords = {}  # emoji -> search text (keywords + category)
+        self.names = {}     # emoji -> tooltip
 
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, homogeneous=True)
         bar.get_style_context().add_class("category-bar")
@@ -242,6 +243,7 @@ class EmojiPage(Gtk.Box):
             section = self._add_section(name)
             for emoji, keys in items:
                 self.keywords[emoji] = f"{keys} {name}".lower()
+                self.names[emoji] = keys
                 self._add_cell(section, emoji)
             self.sections.append(section)
             self._add_bar_button(bar, icon, section)
@@ -262,7 +264,7 @@ class EmojiPage(Gtk.Box):
         child = Gtk.FlowBoxChild()
         child.get_style_context().add_class("emoji-cell")
         child.add(Gtk.Label(label=emoji))
-        child.set_tooltip_text(self.keywords.get(emoji, "").split(" ")[0] or emoji)
+        child.set_tooltip_text(self.names.get(emoji) or emoji)
         child.show_all()
         section.flowbox.add(child)
         section.cells.append((child, emoji, self.keywords.get(emoji, "")))
@@ -490,6 +492,7 @@ class PickerWindow(Gtk.Window):
         box.pack_start(self.stack, True, True, 0)
         self.add(box)
         box.show_all()
+        self.emoji_page.filter("")  # show_all() re-showed sections the filter had hidden
 
     def current_page(self):
         return self.stack.get_visible_child()
