@@ -216,7 +216,7 @@ function timeAgo(ts) {
 }
 
 // ---------------------------------------------------------------- Emoji tab (mirrors EmojiPage)
-const keywords = {}, sections = [];
+const keywords = {}, names = {}, sections = [];
 function makeSection(title) {
   const header = document.createElement("div"); header.className = "section-title"; header.textContent = title;
   const grid = document.createElement("div"); grid.className = "grid";
@@ -226,7 +226,7 @@ function makeSection(title) {
 function addCell(sec, emoji) {
   const el = document.createElement("div");
   el.className = "cell"; el.textContent = emoji; el.tabIndex = -1;
-  el.title = (keywords[emoji] || "").split(" ")[0] || emoji;
+  el.title = names[emoji] || emoji;
   el.addEventListener("click", () => pickEmoji(emoji));
   sec.grid.append(el); sec.cells.push({ el, emoji, keys: keywords[emoji] || "" });
 }
@@ -239,7 +239,7 @@ const recent = makeSection("Recently used");
 barButton("🕘", recent);
 for (const [name, icon, items] of DATA.categories) {
   const sec = makeSection(name);
-  for (const [emoji, keys] of items) { keywords[emoji] = `${keys} ${name}`.toLowerCase(); addCell(sec, emoji); }
+  for (const [emoji, keys] of items) { keywords[emoji] = `${keys} ${name}`.toLowerCase(); names[emoji] = keys; addCell(sec, emoji); }
   barButton(icon, sec);
 }
 function refreshRecent() {

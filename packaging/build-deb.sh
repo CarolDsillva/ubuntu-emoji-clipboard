@@ -25,6 +25,16 @@ install -Dm644 "$ROOT/packaging/$APP_ID.desktop" "$STAGE/usr/share/applications/
 install -Dm644 "$ROOT/packaging/clipboard-picker-autostart.desktop" "$STAGE/etc/xdg/autostart/$PKG.desktop"
 install -Dm644 "$ROOT/packaging/$APP_ID.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 install -Dm644 "$ROOT/LICENSE" "$STAGE/usr/share/doc/$PKG/copyright"
+MAINTAINER="Carol Dsilva <109918630+CarolDsillva@users.noreply.github.com>"
+cat <<EOF | gzip -9n > "$STAGE/usr/share/doc/$PKG/changelog.gz"
+$PKG ($VERSION) stable; urgency=low
+
+  * Release $VERSION. Full notes:
+    https://github.com/CarolDsillva/ubuntu-emoji-clipboard/releases
+
+ -- $MAINTAINER  $(date -R)
+EOF
+chmod 644 "$STAGE/usr/share/doc/$PKG/changelog.gz"
 
 SIZE_KB="$(du -sk "$STAGE" | cut -f1)"
 mkdir -p "$STAGE/DEBIAN"
@@ -38,7 +48,7 @@ Architecture: all
 Depends: python3 (>= 3.8), python3-gi, gir1.2-gtk-3.0
 Recommends: xdotool, fonts-noto-color-emoji
 Installed-Size: $SIZE_KB
-Maintainer: Carol Dsilva <109918630+CarolDsillva@users.noreply.github.com>
+Maintainer: $MAINTAINER
 Homepage: https://github.com/CarolDsillva/ubuntu-emoji-clipboard
 Description: Windows-style Win+. emoji and clipboard history picker
  Press Super+. to open a popup with two tabs: searchable emoji and a
