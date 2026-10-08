@@ -4,9 +4,12 @@
 Two tabs: Emoji and clipboard History. Runs as a single background instance that
 records everything you copy; running the command again toggles the popup.
 
-    clipboard_picker.py            toggle the popup (starts the daemon if needed)
-    clipboard_picker.py --hidden   start the background daemon without showing
-    clipboard_picker.py --quit     stop the running daemon
+    clipboard_picker.py                  toggle the popup (starts the daemon if needed)
+    clipboard_picker.py --hidden         start the background daemon without showing
+    clipboard_picker.py --quit           stop the running daemon
+    clipboard_picker.py --setup          (re)bind the keyboard shortcut; runs automatically on first start.
+                                         CLIPBOARD_PICKER_SHORTCUT='<Super>v' picks another key.
+    clipboard_picker.py --remove-setup   remove the shortcut and give Super+. back to IBus
 """
 import json
 import os
@@ -36,6 +39,13 @@ AUTO_PASTE = True          # paste into the previous window after picking
 WIDTH, HEIGHT = 380, 460
 
 IS_X11_SESSION = os.environ.get("XDG_SESSION_TYPE", "").lower() == "x11"
+
+DEFAULT_SHORTCUT = "<Super>period"
+SETUP_MARKER = os.path.join(DATA_DIR, "setup-done")
+MEDIA_KEYS = "org.gnome.settings-daemon.plugins.media-keys"
+KEYBINDING_SCHEMA = MEDIA_KEYS + ".custom-keybinding"
+KEYBINDING_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clipboard-picker/"
+IBUS_EMOJI = "org.freedesktop.ibus.panel.emoji"  # IBus's emoji picker also uses Super+.
 
 CSS = b"""
 .picker { border: 1px solid alpha(@theme_fg_color, 0.18); }
@@ -144,6 +154,57 @@ def paste_into_focused_window():
         subprocess.Popen(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return False  # one-shot GLib timeout
+
+
+# --------------------------------------------------------------------------- per-user setup
+
+def _has_schema(schema_id):
+    source = Gio.SettingsSchemaSource.get_default()
+    return bool(source and source.lookup(schema_id, True))
+
+
+def current_shortcut():
+    """The shortcut already bound to us in GNOME, if any."""
+    if not (_has_schema(MEDIA_KEYS) and _has_schema(KEYBINDING_SCHEMA)):
+        return None
+    if KEYBINDING_PATH not in Gio.Settings.new(MEDIA_KEYS).get_strv("custom-keybindings"):
+        return None
+    return Gio.Settings.new_with_path(KEYBINDING_SCHEMA, KEYBINDING_PATH).get_string("binding") or None
+
+
+def setup_shortcut(shortcut, command):
+    """Bind `shortcut` to `command` as a GNOME custom shortcut. Returns False if not on GNOME."""
+    if not (_has_schema(MEDIA_KEYS) and _has_schema(KEYBINDING_SCHEMA)):
+        return False
+    binding = Gio.Settings.new_with_path(KEYBINDING_SCHEMA, KEYBINDING_PATH)
+    binding.set_string("name", "Clipboard Picker")
+    binding.set_string("command", command)
+    binding.set_string("binding", shortcut)
+    media = Gio.Settings.new(MEDIA_KEYS)
+    paths = media.get_strv("custom-keybindings")
+    if KEYBINDING_PATH not in paths:
+        media.set_strv("custom-keybindings", paths + [KEYBINDING_PATH])
+    if shortcut == DEFAULT_SHORTCUT and _has_schema(IBUS_EMOJI):
+        Gio.Settings.new(IBUS_EMOJI).set_strv("hotkey", [])
+    Gio.Settings.sync()
+    return True
+
+
+def remove_setup():
+    if _has_schema(MEDIA_KEYS) and _has_schema(KEYBINDING_SCHEMA):
+        media = Gio.Settings.new(MEDIA_KEYS)
+        media.set_strv("custom-keybindings",
+                       [p for p in media.get_strv("custom-keybindings") if p != KEYBINDING_PATH])
+        binding = Gio.Settings.new_with_path(KEYBINDING_SCHEMA, KEYBINDING_PATH)
+        for key in ("name", "command", "binding"):
+            binding.reset(key)
+    if _has_schema(IBUS_EMOJI):
+        Gio.Settings.new(IBUS_EMOJI).reset("hotkey")
+    Gio.Settings.sync()
+    try:
+        os.remove(SETUP_MARKER)
+    except FileNotFoundError:
+        pass
 
 
 # --------------------------------------------------------------------------- emoji tab
@@ -540,19 +601,44 @@ class PickerApp(Gtk.Application):
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), provider,
                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        GLib.set_application_name("Clipboard Picker")
+        Gtk.Window.set_default_icon_name(APP_ID)
         self.window = PickerWindow(self)
-        self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        self.clipboard =Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         self.clipboard.connect("owner-change", lambda *_: self._read_clipboard())
         GLib.timeout_add(POLL_MS, self._poll)  # fallback in case owner-change isn't delivered
         self._read_clipboard()
 
     def do_command_line(self, command_line):
-        args = command_line.get_arguments()[1:]
+        args = set(command_line.get_arguments()[1:])
+        if "--remove-setup" in args:
+            remove_setup()
+        elif "--setup" in args or ("--quit" not in args and not os.path.exists(SETUP_MARKER)):
+            self._run_setup(command_line)
         if "--quit" in args:
             self.quit()
-        elif "--hidden" not in args:
+        elif not args & {"--hidden", "--setup", "--remove-setup"}:
             self.window.toggle()
         return 0
+
+    def _run_setup(self, command_line):
+        """First-run (or --setup) per-user configuration: keyboard shortcut + a hello notification."""
+        shortcut = (command_line.getenv("CLIPBOARD_PICKER_SHORTCUT")
+                    or current_shortcut() or DEFAULT_SHORTCUT)
+        command = (command_line.getenv("CLIPBOARD_PICKER_LAUNCHER") or shutil.which("clipboard-picker")
+                   or f"{sys.executable} {os.path.abspath(__file__)}")
+        bound = setup_shortcut(shortcut, command)
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(SETUP_MARKER, "w", encoding="utf-8") as f:
+            f.write(shortcut if bound else "no-gnome")
+
+        key, mods = Gtk.accelerator_parse(shortcut)
+        label = Gtk.accelerator_get_label(key, mods) if bound else None
+        note = Gio.Notification.new("Clipboard Picker is ready")
+        note.set_body(f"Press {label} to open emoji and clipboard history." if label else
+                      f"Bind a keyboard shortcut to “{command}” to open it.")
+        note.set_icon(Gio.ThemedIcon.new(APP_ID))
+        self.send_notification("ready", note)
 
     # -- clipboard watching
     def _poll(self):

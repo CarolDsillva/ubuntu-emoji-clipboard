@@ -7,45 +7,65 @@ A Windows **Win + .** style popup for Ubuntu. Press **Super + .** (the Windows k
 
 Pick an item and it goes onto the clipboard. On an Xorg session it is also pasted into the window you were in.
 
-## Requirements
-
-- Ubuntu 20.04 or newer, or another GNOME-based distro. Other desktops work, but you bind the shortcut yourself.
-- Python 3 with GTK 3 bindings. The installer adds these with `apt` if they're missing, which needs `sudo`.
+Works on Ubuntu 20.04 or newer, and other GNOME-based distros. On other desktops it works too, but you bind the shortcut yourself.
 
 ## Install
 
-On the Ubuntu machine, open a terminal and run:
+Pick **one** of these.
+
+### Option A: Download the installer package (recommended)
+
+1. Download **[clipboard-picker_all.deb](https://github.com/CarolDsillva/ubuntu-emoji-clipboard/releases/latest/download/clipboard-picker_all.deb)**.
+2. Install it. Either open a terminal in your Downloads folder and run:
+   ```bash
+   sudo apt install ./clipboard-picker_all.deb
+   ```
+   or right-click the file and choose **Open With → Software Install** / **App Center**.
+3. Open **Clipboard Picker** from your app menu once, or log out and back in.
+4. Press **Super + .** (the Windows key + period) 🎉
+
+The first time it runs for each user, it sets up the **Super + .** shortcut and shows a "ready" notification. After that it starts automatically at login.
+
+**Update:** download and install the new `.deb` the same way.
+**Uninstall:**
+```bash
+clipboard-picker --remove-setup --quit && sudo apt remove clipboard-picker
+```
+
+### Option B: One-line install (no admin rights needed)
+
+Open a terminal and paste:
 
 ```bash
-sudo apt install -y git
+curl -fsSL https://raw.githubusercontent.com/CarolDsillva/ubuntu-emoji-clipboard/main/install.sh | bash
+```
+
+This installs for your user only, in `~/.local`. It only asks for your password if a needed system package is missing, and on a standard Ubuntu desktop it usually isn't. To use a different key, put `SHORTCUT='<Super>v'` in front of `bash`, like this: `... | SHORTCUT='<Super>v' bash`.
+
+**Update:** run the same command again.
+**Uninstall:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/CarolDsillva/ubuntu-emoji-clipboard/main/uninstall.sh | bash
+```
+
+Add `-s -- --purge` after `bash` to also delete your saved history.
+
+### Option C: From a clone (for developers)
+
+```bash
 git clone https://github.com/CarolDsillva/ubuntu-emoji-clipboard.git
-cd ubuntu-emoji-clipboard
-./install.sh
+cd ubuntu-emoji-clipboard && ./install.sh
 ```
 
-Then press **Super + .** 🎉
+To update, run `git pull && ./install.sh`. To uninstall, run `./uninstall.sh`.
 
-The installer:
-1. Installs `python3-gi`, `gir1.2-gtk-3.0`, `xdotool` and `fonts-noto-color-emoji`. These are usually already present.
-2. Copies the app to `~/.local/share/clipboard-picker` and adds a launcher at `~/.local/bin/clipboard-picker`.
-3. Sets the app to start at login (in the background) and starts it right away.
-4. Binds **Super + .** as a GNOME custom shortcut. Ubuntu's built-in IBus emoji picker also uses this key, so the installer turns that one off.
+### Changing the shortcut later
 
-To use a different key, run `SHORTCUT='<Super>v' ./install.sh` instead.
-
-### Update
+Use *Settings → Keyboard → View and Customize Shortcuts → Custom Shortcuts → Clipboard Picker*, or run:
 
 ```bash
-cd ubuntu-emoji-clipboard && git pull && ./install.sh
+CLIPBOARD_PICKER_SHORTCUT='<Super>v' clipboard-picker --setup
 ```
-
-### Uninstall
-
-```bash
-./uninstall.sh
-```
-
-Add `--purge` to also delete the saved history. Uninstalling also gives Super + . back to IBus.
 
 ## Keyboard
 
@@ -76,7 +96,7 @@ Terminals paste with Ctrl + Shift + V, so auto-paste won't work in them. Press C
 
 ## Settings
 
-Edit the constants at the top of `clipboard_picker.py` (`MAX_HISTORY`, `AUTO_PASTE`, `WIDTH`/`HEIGHT`, and so on), then run `./install.sh` again. The installer also restarts the app.
+Edit the constants at the top of `clipboard_picker.py` (`MAX_HISTORY`, `AUTO_PASTE`, `WIDTH`/`HEIGHT`, and so on), then run `./install.sh` again from your clone. The installer also restarts the app.
 
 To add emoji, add lines to `emoji_data.py`. Each line is an emoji followed by its search keywords.
 
@@ -96,8 +116,20 @@ Then open the `preview.html` it creates. The page reads `emoji_data.py` and the 
 |---|---|
 | `clipboard_picker.py` | The app (Python + GTK 3): background daemon, clipboard watcher, popup window |
 | `emoji_data.py` | Emoji list and search keywords |
-| `install.sh` / `uninstall.sh` | Per-user install: dependencies, launcher, autostart, keyboard shortcut |
+| `install.sh` / `uninstall.sh` | Per-user install (Options B and C) |
+| `packaging/` | Launcher, app-menu and autostart entries, icon, `.deb` builder, CI smoke test |
+| `.github/workflows/build.yml` | Builds the `.deb`, tests it on Ubuntu, and publishes releases |
 | `make_preview.py` + `preview_template.html` | Build the browser preview |
+
+## Releasing a new version (maintainer)
+
+Every push to `main` builds the `.deb`, installs it on a fresh Ubuntu machine, and runs [`packaging/smoke-test.sh`](packaging/smoke-test.sh) on a virtual display. The run also saves screenshots of the popup. To publish a release that users can download, tag it:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+The workflow then attaches `clipboard-picker_all.deb` to a GitHub Release. The download link in Option A always points to the newest release.
 
 ## Privacy
 

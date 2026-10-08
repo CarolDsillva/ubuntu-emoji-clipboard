@@ -1,0 +1,8 @@
+#!/bin/sh
+# Launcher for Clipboard Picker. @APP_DIR@ is filled in by install.sh / build-deb.sh.
+# GDK_BACKEND=x11: on GNOME Wayland this runs the app through XWayland, which (unlike
+# native Wayland) lets a background app see clipboard changes.
+export GDK_BACKEND=x11
+CLIPBOARD_PICKER_LAUNCHER="$(readlink -f "$0")"
+export CLIPBOARD_PICKER_LAUNCHER
+exec python3 "@APP_DIR@/clipboard_picker.py" "$@"

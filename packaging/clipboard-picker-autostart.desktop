@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Clipboard Picker
+Comment=Records clipboard history in the background (open with Super+.)
+Exec=clipboard-picker --hidden
+Icon=io.github.ClipboardPicker
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
