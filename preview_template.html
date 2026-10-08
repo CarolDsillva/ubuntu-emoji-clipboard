@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clipboard Picker Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&family=Ubuntu+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f2f1f0; --surface: #ffffff; --win: #fafafa; --fg: #2e3436; --dim: rgba(46,52,54,.62);
+  --border: rgba(46,52,54,.18); --line: rgba(46,52,54,.08); --btn: #ebebeb; --btn-hover: #e1e1e1;
+  --accent: #e95420; --accent-soft: rgba(233,84,32,.14); --hover: rgba(233,84,32,.28);
+  --shadow: 0 10px 30px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.12);
+  --emoji: "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1d1d1d; --surface: #262626; --win: #2c2c2c; --fg: #f1f1f1; --dim: rgba(241,241,241,.6);
+    --border: rgba(241,241,241,.18); --line: rgba(241,241,241,.08); --btn: #3a3a3a; --btn-hover: #444;
+    --accent-soft: rgba(233,84,32,.2); --shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1d1d1d; --surface: #262626; --win: #2c2c2c; --fg: #f1f1f1; --dim: rgba(241,241,241,.6);
+  --border: rgba(241,241,241,.18); --line: rgba(241,241,241,.08); --btn: #3a3a3a; --btn-hover: #444;
+  --accent-soft: rgba(233,84,32,.2); --shadow: 0 10px 30px rgba(0,0,0,.5);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 Ubuntu, "Segoe UI", sans-serif; }
+button { font: inherit; color: inherit; }
+kbd { font: 12px "Ubuntu Mono", monospace; background: var(--btn); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+code { font: 13px "Ubuntu Mono", monospace; }
+
+/* ---------- demo page (not part of the app) ---------- */
+header.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+header.top h1 { font-size: 16px; margin: 0 auto 0 0; font-weight: 500; }
+header.top h1 span { color: var(--dim); font-weight: 400; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--btn); padding: 4px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.plain { border: 1px solid var(--border); background: var(--btn); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.plain:hover { background: var(--btn-hover); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; padding: 20px; max-width: 1200px; margin: 0 auto; }
+@media (max-width: 820px) { main { grid-template-columns: minmax(0, 1fr); padding: 16px; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--dim); margin: 0 0 10px; font-weight: 500; }
+.hint { color: var(--dim); margin: 0 0 12px; }
+textarea#doc { width: 100%; min-height: 340px; resize: vertical; border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--win); color: var(--fg); font: 15px/1.5 Ubuntu, sans-serif, var(--emoji); }
+textarea#doc:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; }
+.keys dt { white-space: nowrap; }
+.keys dd { margin: 0; color: var(--dim); }
+.map { list-style: none; padding: 0; margin: 0; }
+.map li { padding: 6px 0; border-top: 1px solid var(--line); }
+.map li:first-child { border-top: 0; }
+.map code { color: var(--accent); }
+.map small { display: block; color: var(--dim); }
+.settings { font: 12px "Ubuntu Mono", monospace; color: var(--dim); margin-top: 10px; word-break: break-word; }
+aside .card + .card { margin-top: 20px; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 14px; border-radius: 8px; box-shadow: var(--shadow); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; }
+.toast.show { opacity: 1; }
+
+/* ---------- the picker (mirrors CSS in clipboard_picker.py) ---------- */
+.picker { position: fixed; z-index: 10; display: flex; flex-direction: column; background: var(--win); border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 14px; }
+.picker[hidden] { display: none; }
+.switcher { display: flex; justify-content: center; margin-top: 6px; }
+.switcher button { border: 1px solid var(--border); background: var(--btn); padding: 4px 14px; cursor: pointer; font-family: Ubuntu, sans-serif, var(--emoji); }
+.switcher button:first-child { border-radius: 6px 0 0 6px; }
+.switcher button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.switcher button[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 0 -2px var(--accent); }
+.search { margin: 6px; padding: 5px 8px 5px 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface) no-repeat 8px center; color: var(--fg); font: inherit;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%23888' stroke-width='2'%3E%3Ccircle cx='6' cy='6' r='4.5'/%3E%3Cpath d='m9.5 9.5 3.5 3.5'/%3E%3C/svg%3E"); }
+.search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.page { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.page[hidden] { display: none; }
+.scroller { flex: 1; overflow-y: auto; min-height: 0; }
+.category-bar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.category-bar button { border: 0; background: none; padding: 2px 4px; font: 15px/1.6 var(--emoji); cursor: pointer; border-radius: 4px; }
+.category-bar button:hover { background: var(--btn); }
+.content { padding: 6px; }
+.section-title { font-weight: 700; font-size: 11px; opacity: .65; margin: 8px 4px 2px; }
+.section-title[hidden], .grid[hidden], .cell[hidden], .row[hidden] { display: none; }
+.grid { display: grid; grid-template-columns: repeat(9, 1fr); }
+.cell { font: 21px/1 var(--emoji); text-align: center; padding: 5px 0; border-radius: 6px; cursor: pointer; user-select: none; }
+.cell:hover, .cell:focus { background: var(--hover); outline: none; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; padding: 6px; }
+.toolbar button { border: 1px solid var(--border); background: var(--btn); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.toolbar button:hover { background: var(--btn-hover); }
+.dim { opacity: .6; }
+.row { display: flex; align-items: flex-start; gap: 4px; padding: 6px 4px 6px 8px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.row:hover, .row:focus { background: var(--accent-soft); outline: none; }
+.row:focus { box-shadow: inset 2px 0 var(--accent); }
+.row.pinned { background: var(--accent-soft); }
+.row .text { flex: 1; min-width: 0; }
+.row .preview { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.row .meta { font-size: 10px; opacity: .6; }
+.row button { border: 0; background: none; padding: 0 4px; cursor: pointer; border-radius: 4px; font-family: var(--emoji), sans-serif; }
+.row button:hover { background: var(--btn); }
+.row button.unpinned { opacity: .4; }
+.placeholder { text-align: center; padding: 24px; }
+
+/* ---------- code map overlay ---------- */
+body.codemap [data-src] { outline: 1px dashed var(--accent); outline-offset: -1px; position: relative; }
+body.codemap [data-src]::after { content: attr(data-src); position: absolute; top: 0; right: 0; z-index: 5; font: 10px/1.4 "Ubuntu Mono", monospace; background: var(--accent); color: #fff; padding: 0 4px; pointer-events: none; }
+body.codemap .picker[data-src] { position: fixed; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Clipboard Picker <span>· browser preview of the Ubuntu app</span></h1>
+  <label>Session:</label>
+  <div class="seg" id="session">
+    <button data-v="x11" aria-pressed="true" title="Opens at the mouse and pastes automatically">Xorg</button>
+    <button data-v="wayland" aria-pressed="false" title="Opens centred; you press Ctrl+V yourself">Wayland</button>
+  </div>
+  <button class="plain" id="codemap-btn" aria-pressed="false">Show code map</button>
+  <button class="plain" id="reset-btn" title="Restore the sample history">Reset demo</button>
+  <button class="plain" id="open-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)">Open picker</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Pretend this is any app on the laptop</h2>
+    <p class="hint">Click somewhere in the text, then press <kbd>Ctrl</kbd>+<kbd>.</kbd> (this stands in for <kbd>Super</kbd>+<kbd>.</kbd>, which Windows keeps for itself). Copy text here with <kbd>Ctrl</kbd>+<kbd>C</kbd> to add it to History. You can also paste in something copied from another app: browsers can't watch the clipboard in the background, so pasting is how the preview sees it.</p>
+    <textarea id="doc" spellcheck="false">Hi team,
+
+Quick update on the release: everything is on track for Friday.
+Select this line and press Ctrl+C, then open the picker and look at the History tab.
+
+Thanks!</textarea>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h2>Keys inside the picker</h2>
+      <dl class="keys">
+        <dt><kbd>type</kbd></dt><dd>Search both tabs</dd>
+        <dt><kbd>↓</kbd> <kbd>←</kbd><kbd>→</kbd></dt><dd>Move into and through results</dd>
+        <dt><kbd>Enter</kbd></dt><dd>Pick first / focused result</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>1</kbd>/<kbd>2</kbd></dt><dd>Switch tab</dd>
+        <dt><kbd>Del</kbd></dt><dd>Delete focused history item</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Clear search, then close</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Where to change things</h2>
+      <ul class="map" id="map"></ul>
+      <div class="settings" id="settings"></div>
+    </div>
+  </aside>
+</main>
+
+<div class="picker" id="picker" hidden data-src="PickerWindow" role="dialog" aria-label="Clipboard Picker">
+  <div class="switcher" role="tablist">
+    <button role="tab" data-tab="emoji" aria-selected="true" tabindex="-1">😀&nbsp; Emoji</button>
+    <button role="tab" data-tab="history" aria-selected="false" tabindex="-1">📋&nbsp; History</button>
+  </div>
+  <input class="search" id="search" type="text" placeholder="Search emoji or clipboard…" autocomplete="off">
+  <div class="page" id="page-emoji" data-src="EmojiPage">
+    <div class="category-bar" id="catbar"></div>
+    <div class="scroller" id="emoji-scroller"><div class="content" id="emoji-content"></div></div>
+  </div>
+  <div class="page" id="page-history" hidden data-src="HistoryPage">
+    <div class="toolbar"><span class="dim" id="count"></span><button id="clear" title="Delete everything except pinned items">Clear all</button></div>
+    <div class="scroller"><div id="list"></div><div class="placeholder dim" id="placeholder">Nothing copied yet.<br>Copy some text and it will show up here.</div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const CFG = DATA.settings;
+const $ = (s) => document.querySelector(s);
+const picker = $("#picker"), search = $("#search"), doc = $("#doc");
+let session = "x11", lastClip = null, shownAt = 0, query = "";
+let mouse = { x: 200, y: 200 }, savedSel = null;
+
+// ---------------------------------------------------------------- Store (mirrors class Store)
+const LS_KEY = "clipboard-picker-preview";
+const store = { history: [], recent_emoji: [] };
+function seed() {
+  const now = Date.now() / 1000;
+  store.history = [
+    { text: "Best regards,\nYour Name\nTeam Lead", pinned: true, time: now - 86400 * 3 },
+    { text: "Meeting moved to 3:30 PM — same room.", pinned: false, time: now - 240 },
+    { text: "https://example.com/projects/roadmap", pinned: false, time: now - 3600 * 2 },
+    { text: "git pull --rebase origin main", pinned: false, time: now - 3600 * 26 },
+  ];
+  store.recent_emoji = ["👍", "🙏", "😂", "✅"];
+}
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(LS_KEY)); if (d && d.history) { Object.assign(store, d); return; } } catch (e) {}
+  seed();
+}
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {} }
+function addText(text) {
+  if (!text || !text.trim() || text.length > CFG.MAX_ITEM_CHARS) return false;
+  const i = store.history.findIndex((h) => h.text === text);
+  const pinned = i >= 0 && store.history[i].pinned;
+  if (i >= 0) store.history.splice(i, 1);
+  store.history.unshift({ text, pinned, time: Date.now() / 1000 });
+  const drop = new Set(store.history.filter((h) => !h.pinned).slice(CFG.MAX_HISTORY));
+  store.history = store.history.filter((h) => !drop.has(h));
+  save(); return true;
+}
+function addRecentEmoji(e) {
+  store.recent_emoji = [e, ...store.recent_emoji.filter((x) => x !== e)].slice(0, CFG.MAX_RECENT_EMOJI);
+  save();
+}
+function timeAgo(ts) {
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 60) return "just now";
+  for (const [u, n] of [["d", 86400], ["h", 3600], ["min", 60]]) if (s >= n) return `${Math.floor(s / n)} ${u} ago`;
+  return "";
+}
+
+// ---------------------------------------------------------------- Emoji tab (mirrors EmojiPage)
+const keywords = {}, sections = [];
+function makeSection(title) {
+  const header = document.createElement("div"); header.className = "section-title"; header.textContent = title;
+  const grid = document.createElement("div"); grid.className = "grid";
+  $("#emoji-content").append(header, grid);
+  const sec = { title, header, grid, cells: [] }; sections.push(sec); return sec;
+}
+function addCell(sec, emoji) {
+  const el = document.createElement("div");
+  el.className = "cell"; el.textContent = emoji; el.tabIndex = -1;
+  el.title = (keywords[emoji] || "").split(" ")[0] || emoji;
+  el.addEventListener("click", () => pickEmoji(emoji));
+  sec.grid.append(el); sec.cells.push({ el, emoji, keys: keywords[emoji] || "" });
+}
+function barButton(icon, sec) {
+  const b = document.createElement("button"); b.textContent = icon; b.title = sec.title; b.tabIndex = -1;
+  b.addEventListener("click", () => { if (!sec.header.hidden) $("#emoji-scroller").scrollTop = sec.header.offsetTop - $("#emoji-content").offsetTop; });
+  $("#catbar").append(b);
+}
+const recent = makeSection("Recently used");
+barButton("🕘", recent);
+for (const [name, icon, items] of DATA.categories) {
+  const sec = makeSection(name);
+  for (const [emoji, keys] of items) { keywords[emoji] = `${keys} ${name}`.toLowerCase(); addCell(sec, emoji); }
+  barButton(icon, sec);
+}
+function refreshRecent() {
+  recent.cells.forEach((c) => c.el.remove()); recent.cells = [];
+  store.recent_emoji.forEach((e) => addCell(recent, e));
+  filterEmoji(query);
+}
+function filterEmoji(q) {
+  for (const sec of sections) {
+    let any = false;
+    for (const c of sec.cells) { const v = !q || c.keys.includes(q) || q === c.emoji; c.el.hidden = !v; any = any || v; }
+    const show = any && !(q && sec === recent);
+    sec.header.hidden = sec.grid.hidden = !show;
+  }
+  if (q) $("#emoji-scroller").scrollTop = 0;
+}
+const visibleCells = () => sections.filter((s) => !s.grid.hidden).flatMap((s) => s.cells.filter((c) => !c.el.hidden));
+
+// ---------------------------------------------------------------- History tab (mirrors HistoryPage / HistoryRow)
+function refreshHistory() {
+  const list = $("#list"); list.textContent = "";
+  const items = [...store.history.filter((h) => h.pinned), ...store.history.filter((h) => !h.pinned)];
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "row" + (item.pinned ? " pinned" : ""); row.tabIndex = -1; row.dataset.text = item.text;
+    row.title = item.text.slice(0, 1000);
+    const lines = item.text.trim().split("\n").length;
+    let preview = item.text.trim().split(/\s+/).join(" ");
+    if (preview.length > 400) preview = preview.slice(0, 400) + "…";
+    const text = document.createElement("div"); text.className = "text";
+    const p = document.createElement("div"); p.className = "preview"; p.textContent = preview;
+    const m = document.createElement("div"); m.className = "meta"; m.textContent = timeAgo(item.time) + (lines > 1 ? ` · ${lines} lines` : "");
+    text.append(p, m);
+    const pin = document.createElement("button"); pin.textContent = "📌"; pin.tabIndex = -1;
+    pin.title = item.pinned ? "Unpin" : "Pin (never expires)"; if (!item.pinned) pin.className = "unpinned";
+    pin.addEventListener("click", (e) => { e.stopPropagation(); item.pinned = !item.pinned; save(); refreshHistory(); });
+    const del = document.createElement("button"); del.textContent = "✕"; del.title = "Delete (Del)"; del.tabIndex = -1;
+    del.addEventListener("click", (e) => { e.stopPropagation(); removeText(item.text); refreshHistory(); });
+    row.append(text, pin, del);
+    row.addEventListener("click", () => pickText(item.text));
+    list.append(row);
+  }
+  const pinned = items.filter((h) => h.pinned).length;
+  $("#count").textContent = `${items.length} items` + (pinned ? ` · ${pinned} pinned` : "");
+  filterHistory(query);
+}
+function filterHistory(q) {
+  let any = false;
+  for (const row of $("#list").children) { const v = !q || row.dataset.text.toLowerCase().includes(q); row.hidden = !v; any = any || v; }
+  $("#placeholder").hidden = any;
+}
+function removeText(text) { store.history = store.history.filter((h) => h.text !== text); save(); }
+const visibleRows = () => [...$("#list").children].filter((r) => !r.hidden);
+$("#clear").addEventListener("click", () => { store.history = store.history.filter((h) => h.pinned); save(); refreshHistory(); });
+
+// ---------------------------------------------------------------- Window (mirrors PickerWindow)
+const currentTab = () => (picker.querySelector('[aria-selected="true"]').dataset.tab);
+function setTab(name) {
+  for (const b of picker.querySelectorAll("[role=tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
+  $("#page-emoji").hidden = name !== "emoji"; $("#page-history").hidden = name !== "history";
+  search.focus();
+}
+picker.querySelectorAll("[role=tab]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+search.addEventListener("input", () => { query = search.value.trim().toLowerCase(); filterEmoji(query); filterHistory(query); });
+
+function place() {
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  const W = Math.min(CFG.WIDTH, vw - 16), H = Math.min(CFG.HEIGHT, vh - 16);  // shrink to fit small panes
+  let x, y;
+  if (session === "x11") { x = mouse.x - W / 2; y = mouse.y + 16; }
+  else { x = (vw - W) / 2; y = (vh - H) / 3; }
+  x = Math.min(Math.max(x, 8), vw - W - 8); y = Math.min(Math.max(y, 8), vh - H - 8);
+  Object.assign(picker.style, { left: x + "px", top: y + "px", width: W + "px", height: H + "px" });
+}
+function show() {
+  savedSel = document.activeElement === doc ? [doc.selectionStart, doc.selectionEnd] : savedSel;
+  search.value = ""; query = ""; filterEmoji(""); refreshHistory();
+  place(); picker.hidden = false; shownAt = performance.now();
+  $("#emoji-scroller").scrollTop = 0; search.focus();
+}
+function hide() { picker.hidden = true; }
+function toggle() { picker.hidden ? show() : hide(); }
+
+function focusFirst() {
+  const t = currentTab() === "emoji" ? visibleCells()[0]?.el : visibleRows()[0];
+  t?.focus();
+}
+function activateFirst() {
+  if (currentTab() === "emoji") { const c = visibleCells()[0]; if (c) pickEmoji(c.emoji); }
+  else { const r = visibleRows()[0]; if (r) pickText(r.dataset.text); }
+}
+function moveFocus(list, el, delta) {
+  const i = list.indexOf(el), next = list[i + delta];
+  if (next) next.focus(); else if (delta < 0 && i + delta < 0) search.focus();
+}
+
+document.addEventListener("keydown", (e) => {
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && e.key === ".") { e.preventDefault(); toggle(); return; }   // stands in for Super+.
+  if (picker.hidden) return;
+  const a = document.activeElement;
+
+  if (e.key === "Escape") { e.preventDefault(); if (search.value) { search.value = ""; search.dispatchEvent(new Event("input")); } else hide(); return; }
+  if (ctrl && (e.key === "1" || e.key === "2")) { e.preventDefault(); setTab(e.key === "1" ? "emoji" : "history"); return; }
+  if (ctrl && (e.key === "PageUp" || e.key === "PageDown")) { e.preventDefault(); setTab(currentTab() === "emoji" ? "history" : "emoji"); return; }
+
+  if (a === search) {
+    if (e.key === "ArrowDown") { e.preventDefault(); focusFirst(); }
+    else if (e.key === "Enter") { e.preventDefault(); activateFirst(); }
+    return;
+  }
+  if (a.classList.contains("cell")) {
+    const cells = visibleCells().map((c) => c.el);
+    const d = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -9, ArrowDown: 9 }[e.key];
+    if (d) { e.preventDefault(); moveFocus(cells, a, d); return; }
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickEmoji(a.textContent); return; }
+  }
+  if (a.classList.contains("row")) {
+    const rows = visibleRows();
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); moveFocus(rows, a, e.key === "ArrowDown" ? 1 : -1); return; }
+    if (e.key === "Enter") { e.preventDefault(); pickText(a.dataset.text); return; }
+    if (e.key === "Delete") {
+      e.preventDefault(); const i = rows.indexOf(a);
+      removeText(a.dataset.text); refreshHistory();
+      const r = visibleRows(); (r[i] || r[i - 1])?.focus(); return;
+    }
+  }
+  // Typing anywhere goes to the search box.
+  if (!ctrl && !e.altKey && e.key.length === 1 && e.key !== " ") search.focus();
+});
+
+// focus-out: clicking elsewhere closes it
+document.addEventListener("mousedown", (e) => {
+  if (!picker.hidden && !picker.contains(e.target) && e.target.id !== "open-btn" && performance.now() - shownAt > 400) hide();
+});
+
+// ---------------------------------------------------------------- App (mirrors PickerApp)
+function onClipboardText(text) {          // PickerApp._on_text
+  if (text && text !== lastClip) { lastClip = text; if (addText(text) && !picker.hidden) refreshHistory(); }
+}
+function pickEmoji(e) { addRecentEmoji(e); refreshRecent(); deliver(e); }
+function pickText(t) { addText(t); deliver(t); }
+function deliver(text) {                  // PickerApp._deliver
+  lastClip = text;
+  navigator.clipboard?.writeText(text).catch(() => {});
+  hide();
+  if (CFG.AUTO_PASTE && session === "x11") setTimeout(() => pasteIntoDoc(text), 200);
+  else { toast("Copied. Press Ctrl+V to paste (Wayland can't auto-paste)."); doc.focus(); }
+}
+function pasteIntoDoc(text) {             // paste_into_focused_window
+  doc.focus();
+  const [s, en] = savedSel || [doc.value.length, doc.value.length];
+  doc.setRangeText(text, s, en, "end");
+  savedSel = [doc.selectionStart, doc.selectionEnd];
+}
+let toastTimer;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2600); }
+
+// The real app watches the system clipboard; the preview records copies/cuts/pastes on this page.
+document.addEventListener("copy", () => setTimeout(() => onClipboardText(String(getSelection()) || doc.value.slice(doc.selectionStart, doc.selectionEnd)), 0));
+document.addEventListener("cut", () => onClipboardText(doc.value.slice(doc.selectionStart, doc.selectionEnd)));
+document.addEventListener("paste", (e) => onClipboardText(e.clipboardData?.getData("text/plain")));
+doc.addEventListener("mousedown", (e) => { mouse = { x: e.clientX, y: e.clientY }; });
+doc.addEventListener("blur", () => { savedSel = [doc.selectionStart, doc.selectionEnd]; });
+
+// ---------------------------------------------------------------- demo chrome
+$("#open-btn").addEventListener("click", (e) => { const r = e.currentTarget.getBoundingClientRect(); mouse = { x: r.left, y: r.bottom }; toggle(); });
+$("#reset-btn").addEventListener("click", () => { seed(); save(); refreshRecent(); refreshHistory(); toast("Sample history restored"); });
+$("#session").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return; session = b.dataset.v;
+  for (const x of $("#session").children) x.setAttribute("aria-pressed", String(x === b));
+  if (!picker.hidden) place();
+});
+$("#codemap-btn").addEventListener("click", (e) => {
+  const on = document.body.classList.toggle("codemap"); e.currentTarget.setAttribute("aria-pressed", String(on));
+  e.currentTarget.textContent = on ? "Hide code map" : "Show code map";
+  if (on && picker.hidden) show();
+});
+for (const [name, desc, line] of DATA.codeMap) {
+  const li = document.createElement("li");
+  li.innerHTML = `<code></code><small></small>`;
+  li.querySelector("code").textContent = name + (line ? `  · line ${line}` : "");
+  li.querySelector("small").textContent = desc;
+  $("#map").append(li);
+}
+$("#settings").textContent = "From clipboard_picker.py: " + Object.entries(CFG).map(([k, v]) => `${k}=${v}`).join("  ");
+addEventListener("resize", () => { if (!picker.hidden) place(); });
+
+load(); refreshRecent(); refreshHistory();
+</script>
+</body>
+</html>
