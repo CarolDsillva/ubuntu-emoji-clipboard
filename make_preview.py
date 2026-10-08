@@ -28,6 +28,7 @@ CODE_MAP = [  # (code name, what it controls)
     ("PickerApp._on_text", "Watching the clipboard"),
     ("PickerApp._deliver", "What happens when you pick something"),
     ("paste_into_focused_window", "Auto-paste (xdotool / ydotool)"),
+    ("setup_shortcut", "Binding Super+. on first run"),
 ]
 
 

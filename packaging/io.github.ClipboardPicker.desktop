@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Clipboard Picker
+GenericName=Emoji & Clipboard History
+Comment=Pick emoji and recently copied text (Super+.)
+Exec=clipboard-picker
+Icon=io.github.ClipboardPicker
+Terminal=false
+Categories=Utility;
+Keywords=emoji;clipboard;history;paste;picker;
+StartupNotify=false

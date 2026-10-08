@@ -1,70 +1,69 @@
 #!/usr/bin/env bash
-# Installs Clipboard Picker for the current user and binds it to Super+. (override with SHORTCUT=...)
+# Installs Clipboard Picker for the current user (no root needed unless dependencies are missing).
+#
+#   Without cloning:  curl -fsSL https://raw.githubusercontent.com/CarolDsillva/ubuntu-emoji-clipboard/main/install.sh | bash
+#   From a checkout:  ./install.sh
+#
+# SHORTCUT='<Super>v' picks another key (default Super+.). CLIPBOARD_PICKER_REF picks the
+# branch or tag to download (default main).
 set -euo pipefail
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="CarolDsillva/ubuntu-emoji-clipboard"
+REF="${CLIPBOARD_PICKER_REF:-main}"
+SHORTCUT="${SHORTCUT:-<Super>period}"
+APP_ID="io.github.ClipboardPicker"
+FILES=(clipboard_picker.py emoji_data.py packaging/clipboard-picker
+       packaging/$APP_ID.desktop packaging/clipboard-picker-autostart.desktop packaging/$APP_ID.svg)
+
 APP_DIR="$HOME/.local/share/clipboard-picker"
 BIN="$HOME/.local/bin/clipboard-picker"
-AUTOSTART="$HOME/.config/autostart/clipboard-picker.desktop"
-SHORTCUT="${SHORTCUT:-<Super>period}"
-KEY_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clipboard-picker/"
-MEDIA_KEYS="org.gnome.settings-daemon.plugins.media-keys"
+APPS="$HOME/.local/share/applications"
+ICONS="$HOME/.local/share/icons/hicolor/scalable/apps"
+AUTOSTART="$HOME/.config/autostart"
+TMP=""
 
-echo "==> Installing dependencies (may ask for your password)"
-sudo apt-get install -y python3-gi gir1.2-gtk-3.0 xdotool fonts-noto-color-emoji
-
-echo "==> Copying app to $APP_DIR"
-mkdir -p "$APP_DIR" "$(dirname "$BIN")" "$(dirname "$AUTOSTART")"
-install -m 644 "$SRC/clipboard_picker.py" "$SRC/emoji_data.py" "$APP_DIR/"
-
-# GDK_BACKEND=x11: on GNOME Wayland this runs us through XWayland, which (unlike native
-# Wayland) lets a background app see clipboard changes.
-cat > "$BIN" <<EOF
-#!/usr/bin/env bash
-export GDK_BACKEND=x11
-exec python3 "$APP_DIR/clipboard_picker.py" "\$@"
-EOF
-chmod +x "$BIN"
-
-echo "==> Enabling autostart at login"
-cat > "$AUTOSTART" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Clipboard Picker
-Comment=Emoji and clipboard history popup (Super+.)
-Exec=$BIN --hidden
-NoDisplay=true
-X-GNOME-Autostart-enabled=true
-EOF
-
-if gsettings list-schemas | grep -qx "$MEDIA_KEYS"; then
-    echo "==> Binding keyboard shortcut $SHORTCUT"
-    # IBus's own emoji picker uses Super+. by default — free it up.
-    if [[ "$SHORTCUT" == "<Super>period" ]] && gsettings list-schemas | grep -qx org.freedesktop.ibus.panel.emoji; then
-        gsettings set org.freedesktop.ibus.panel.emoji hotkey "[]"
+# Everything runs from main() so a half-downloaded `curl | bash` never runs a partial script.
+main() {
+    local src
+    src="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd || true)"
+    if [[ ! -f "$src/clipboard_picker.py" || ! -d "$src/packaging" ]]; then
+        TMP="$(mktemp -d)"
+        trap 'rm -rf "$TMP"' EXIT
+        echo "==> Downloading Clipboard Picker ($REF)"
+        for f in "${FILES[@]}"; do
+            mkdir -p "$TMP/$(dirname "$f")"
+            curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/$f" -o "$TMP/$f"
+        done
+        src="$TMP"
     fi
-    SCHEMA="$MEDIA_KEYS.custom-keybinding:$KEY_PATH"
-    gsettings set "$SCHEMA" name "Clipboard Picker"
-    gsettings set "$SCHEMA" command "$BIN"
-    gsettings set "$SCHEMA" binding "$SHORTCUT"
-    current="$(gsettings get "$MEDIA_KEYS" custom-keybindings)"
-    updated="$(python3 - "$current" "$KEY_PATH" <<'PY'
-import ast, sys
-paths = ast.literal_eval(sys.argv[1].replace("@as ", "") or "[]")
-if sys.argv[2] not in paths:
-    paths.append(sys.argv[2])
-print(paths)
-PY
-)"
-    gsettings set "$MEDIA_KEYS" custom-keybindings "$updated"
-else
-    echo "!!  Not a GNOME desktop: bind a shortcut to '$BIN' in your keyboard settings manually."
-fi
 
-echo "==> Starting the background service"
-"$BIN" --quit >/dev/null 2>&1 || true
-nohup "$BIN" --hidden >/dev/null 2>&1 &
-disown
+    local missing=()
+    for pkg in python3-gi gir1.2-gtk-3.0 xdotool fonts-noto-color-emoji; do
+        dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+    done
+    if ((${#missing[@]})); then
+        echo "==> Installing ${missing[*]} (may ask for your password)"
+        sudo apt-get install -y "${missing[@]}"
+    fi
 
-echo
-echo "Done! Press Super + .  (Windows key + period) to open Clipboard Picker."
+    echo "==> Installing to $APP_DIR"
+    mkdir -p "$APP_DIR" "$(dirname "$BIN")" "$APPS" "$ICONS" "$AUTOSTART"
+    install -m 644 "$src/clipboard_picker.py" "$src/emoji_data.py" "$APP_DIR/"
+    sed "s|@APP_DIR@|$APP_DIR|g" "$src/packaging/clipboard-picker" > "$BIN"
+    chmod 755 "$BIN"
+    # ~/.local/bin may not be on PATH until the next login, so point the desktop files at it directly.
+    sed "s|^Exec=clipboard-picker|Exec=$BIN|" "$src/packaging/$APP_ID.desktop" > "$APPS/$APP_ID.desktop"
+    sed "s|^Exec=clipboard-picker|Exec=$BIN|" "$src/packaging/clipboard-picker-autostart.desktop" \
+        > "$AUTOSTART/clipboard-picker.desktop"
+    install -m 644 "$src/packaging/$APP_ID.svg" "$ICONS/"
+
+    echo "==> Starting it and binding $SHORTCUT"
+    "$BIN" --quit >/dev/null 2>&1 || true
+    sleep 1
+    CLIPBOARD_PICKER_SHORTCUT="$SHORTCUT" nohup "$BIN" --setup </dev/null >/dev/null 2>&1 &
+
+    echo
+    echo "Done! Press Super + .  (Windows key + period) to open Clipboard Picker."
+}
+
+main "$@"
